@@ -24,7 +24,6 @@ jobs:
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           HEADLESS: "true"
-          TEST_NTFY: "true"
         run: python monitor_termin.py
 
       - name: Screenshot als Artefakt speichern (zum Debuggen)
