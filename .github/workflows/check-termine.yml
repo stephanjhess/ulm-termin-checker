@@ -1,0 +1,58 @@
+name: Ulm Termin Check
+
+on:
+  schedule:
+    # Alle 5 Stunden. Der Job selbst laeuft bis zu 5,5 Stunden und prueft
+    # intern im festen Takt weiter -> die Ueberlappung deckt die typische
+    # GitHub-Cron-Verspaetung (10-30 Min) ab, sodass keine Luecke entsteht.
+    - cron: '0 */5 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Betriebsart'
+        required: true
+        default: 'loop'
+        type: choice
+        options:
+          - loop      # Dauerlauf mit internem Takt
+          - single    # nur einmal pruefen (schneller Test)
+          - test      # nur Probe-Push senden, keine Seitenpruefung
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Etwas mehr als das Zeitbudget des Skripts, damit es sich selbst
+    # sauber beenden kann statt vom Runner abgeschossen zu werden.
+    timeout-minutes: 345
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Abhängigkeiten installieren
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Termine prüfen
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          HEADLESS: "true"
+          # Bei manuellem Start "single"/"test" wird nicht geschleift,
+          # sonst (auch bei Cron) Dauerlauf im 10-Minuten-Takt.
+          LOOP_INTERVAL_MIN: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'loop') && '0' || '10' }}
+          MAX_RUNTIME_MIN: "330"
+          TEST_NTFY: ${{ github.event.inputs.mode == 'test' && 'true' || 'false' }}
+        run: python monitor_termin.py
+
+      - name: Screenshots als Artefakt speichern
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 5
